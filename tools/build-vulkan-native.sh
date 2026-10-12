@@ -40,7 +40,7 @@ sources=(src/kv_budget.cpp src/prefix_reuse.cpp src/main.cpp src/native_app.cpp 
  vulkan/gpt_runtime_router.cpp vulkan/media_vulkan.cpp
  vulkan/storage.cpp vulkan/storage_paths.cpp vulkan/elevation/elevation.cpp vulkan/debug_tee.cpp src/debug_log.cpp
  src/native_ui_update.cpp vulkan/update_ps5.cpp
- vulkan/gpt_runtime_vulkan.cpp vulkan/http_server.cpp vulkan/model_downloader_ps5.cpp
+ vulkan/gpt_runtime_vulkan.cpp vulkan/http_server.cpp vulkan/model_downloader_ps5.cpp vulkan/remote_model.cpp
  vulkan/ui/backend.cpp vulkan/ui/program.cpp)
 media_definitions=()
 media_definitions=(-DPROSPERO_PRISM_RUNTIME -DPROSPERO_MEDIA_VULKAN)
@@ -97,7 +97,7 @@ pacbrew=$(bash "$root/tools/setup-pacbrew-dependencies.sh" --all | tail -n 1)/us
 [[ -f $pacbrew/lib/libcurl.a && -f $pacbrew/lib/libcrypto.a ]] || {
  echo "libcurl is missing from the PacBrew prefix ($pacbrew): run make pacbrew" >&2; exit 2; }
 net_objects=()
-for name in console_curl https_get; do
+for name in console_curl https_get http_post; do
  cc -std=c11 -O2 -Wall -Wextra -ffunction-sections -fdata-sections -DCURL_STATICLIB=1 \
   -I "$pacbrew/include" -I "$root/vulkan/net" -c "$root/vulkan/net/$name.c" -o "$work/obj/net_$name.o"
  net_objects+=("$work/obj/net_$name.o")
