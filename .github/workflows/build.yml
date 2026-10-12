@@ -28,7 +28,7 @@ jobs:
   build:
     name: Validate and build release artifacts
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 120
     # The two write entries are for the attestation step only: a signing identity for this run,
     # and storing the attestation. A pull request from a fork gets neither, whatever is asked.
     permissions:
@@ -85,16 +85,20 @@ jobs:
       # GitHub drops a cache nobody used for a week, and a pull request only sees main's. When
       # nothing was restored, start from the snapshot kept as a file of the build-cache release;
       # a manual run on main with "snapshot" ticked replaces that file (build-cache.yml).
+      # A fork has no build-cache release of its own, so it falls back to the original project's.
       - name: Fetch the compiler cache snapshot
         run: |
           if [ -z "$(ls -A "$CCACHE_DIR" 2>/dev/null)" ]; then
-            url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/download/build-cache/ccache-clang18.tar"
-            if curl -fsSL --retry 3 -o "$RUNNER_TEMP/ccache-clang18.tar" "$url"; then
-              mkdir -p "$CCACHE_DIR"
-              tar -xf "$RUNNER_TEMP/ccache-clang18.tar" -C "$CCACHE_DIR"
-              rm "$RUNNER_TEMP/ccache-clang18.tar"
-              echo "::notice title=Compiler cache::Started from the build-cache snapshot."
-            fi
+            for repo in "$GITHUB_REPOSITORY" blackbearreloaded/ProsperoAI; do
+              url="$GITHUB_SERVER_URL/$repo/releases/download/build-cache/ccache-clang18.tar"
+              if curl -fsSL --retry 3 -o "$RUNNER_TEMP/ccache-clang18.tar" "$url"; then
+                mkdir -p "$CCACHE_DIR"
+                tar -xf "$RUNNER_TEMP/ccache-clang18.tar" -C "$CCACHE_DIR"
+                rm "$RUNNER_TEMP/ccache-clang18.tar"
+                echo "::notice title=Compiler cache::Started from the build-cache snapshot of $repo."
+                break
+              fi
+            done
           fi
 
       - name: Configure parallel compilation

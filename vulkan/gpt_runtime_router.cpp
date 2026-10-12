@@ -7,6 +7,7 @@
 #endif
 #include "model_paths.hpp"
 #include "model_presets.hpp"
+#include "remote_model.hpp"
 #include <mutex>
 #include <vector>
 #include <string>
@@ -37,6 +38,7 @@ enum Kind
     kImage = 1,
     kAudio = 2,
     kSpeech = 3,
+    kRemote = 4, // a remote.json folder: answered by a chat server on the network
 };
 bool is_media(int kind)
 {
@@ -46,14 +48,16 @@ struct Model
 {
     std::string id, name, root;
     int kind;
-    unsigned text_index; // in the shared Vulkan text runtime
+    unsigned text_index; // in the shared Vulkan text runtime, or in remotes for kRemote
 };
 std::vector<Model> models;
+std::vector<prospero_remote::Endpoint> remotes;
 unsigned selected = 0;
 bool scanned = false;
 std::mutex mutex;
 std::mutex inference_mutex;
-const char *purposes[] = {"text-to-text", "text-to-image", "text-to-audio", "text-to-speech"};
+const char *purposes[] = {"text-to-text", "text-to-image", "text-to-audio", "text-to-speech",
+                          "text-to-text"};
 bool exists(const std::string &path)
 {
     struct stat st
@@ -108,6 +112,9 @@ void scan()
         if (complete)
             models.push_back({preset.id, preset.name, root, preset.kind, 0});
     }
+    remotes = prospero_remote::discover(prospero::model_root());
+    for (unsigned i = 0; i < remotes.size(); ++i)
+        models.push_back({remotes[i].id, remotes[i].name, "", kRemote, i});
 }
 // Written at every change of model, after the one in memory was let go: with one
 // model in memory at a time, the largest free block comes back to what it was.
@@ -183,6 +190,8 @@ const char *gpt_runtime_backend()
     scan();
     if (selected < models.size() && is_media(models[selected].kind))
         return "Vulkan · Media";
+    if (selected < models.size() && models[selected].kind == kRemote)
+        return "Network · Remote";
     return prospero_vulkan::gpt_runtime_backend();
 }
 bool gpt_runtime_context_full()
@@ -274,6 +283,7 @@ int gpt_runtime_generate(const gpt_runtime_message_t *messages, unsigned count,
         return 1;
     }
     Model model;
+    prospero_remote::Endpoint remote;
     {
         std::lock_guard<std::mutex> lock(mutex);
         scan();
@@ -287,7 +297,12 @@ int gpt_runtime_generate(const gpt_runtime_message_t *messages, unsigned count,
                 return 1;
         }
         model = models[selected];
+        if (model.kind == kRemote && model.text_index < remotes.size())
+            remote = remotes[model.text_index];
     }
+    if (model.kind == kRemote)
+        return prospero_remote::generate(remote, messages, count, output, capacity, stats,
+                                         progress);
     // Inference owns its backend, but does not hold the catalog lock. HTTP model
     // lists and the native UI remain responsive while media generation runs.
     if (model.kind == kVulkanText)

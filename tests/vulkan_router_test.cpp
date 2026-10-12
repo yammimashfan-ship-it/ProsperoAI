@@ -2,6 +2,7 @@
 #include "runtime_vulkan.hpp"
 #include "model_paths.hpp"
 #include "model_presets.hpp"
+#include "../vulkan/remote_model.hpp"
 #include <cassert>
 #include <cstring>
 #include <filesystem>
@@ -13,6 +14,8 @@ namespace
 {
 unsigned text_selected = 0, released = 0, stopped = 0, generated = 0;
 unsigned media_released = 0;
+bool remote_installed = false;
+unsigned remote_generated = 0;
 std::atomic<bool> block_voice{false}, voice_entered{false}, voice_release{false};
 } // namespace
 namespace prospero_media_vk
@@ -25,6 +28,29 @@ void print_stats()
 {
 }
 } // namespace prospero_media_vk
+namespace prospero_remote
+{
+std::vector<Endpoint> discover(const char *root)
+{
+    assert(root && std::string(root) == prospero::model_root());
+    if (!remote_installed)
+        return {};
+    Endpoint claude;
+    claude.id = "claude-pc";
+    claude.name = "Claude (PC)";
+    claude.url = "http://192.168.1.20:8765/v1/chat/completions";
+    return {claude};
+}
+int generate(const Endpoint &endpoint, const gpt_runtime_message_t *messages, unsigned count,
+             char *output, std::size_t capacity, gpt_runtime_stats_t *stats,
+             gpt_runtime_progress_fn)
+{
+    assert(endpoint.id == "claude-pc" && count > 0 && stats);
+    ++remote_generated;
+    std::snprintf(output, capacity, "remote:%s", messages[count - 1].content);
+    return 0;
+}
+} // namespace prospero_remote
 namespace prospero_vulkan
 {
 unsigned gpt_runtime_model_count()
@@ -196,4 +222,24 @@ int main()
     assert(std::strcmp(out, "text0") == 0);
     assert(std::filesystem::file_size(legacy) > 0);
     assert(gpt_runtime_select_model(0));
+    // A remote.json folder is a text model answered over the network: choosing it lets
+    // the local model go, and its replies come from prospero_remote.
+    remote_installed = true;
+    gpt_runtime_refresh_models();
+    assert(gpt_runtime_model_count() == 5 && gpt_runtime_selected_model() == 0);
+    assert(std::strcmp(gpt_runtime_model_id(4), "claude-pc") == 0);
+    assert(std::strcmp(gpt_runtime_model_name(4), "Claude (PC)") == 0);
+    assert(std::strcmp(gpt_runtime_model_purpose(4), "text-to-text") == 0);
+    const unsigned released_before = released;
+    gpt_runtime_settings_t remote_settings{};
+    remote_settings.model_id = "claude-pc";
+    assert(gpt_runtime_generate(messages, 1, remote_settings, out, sizeof(out), &stats, nullptr) ==
+           0);
+    assert(std::strcmp(out, "remote:Hello") == 0 && remote_generated == 1);
+    assert(released == released_before + 1 && gpt_runtime_selected_model() == 4);
+    assert(std::strcmp(gpt_runtime_backend(), "Network · Remote") == 0);
+    assert(gpt_runtime_prepare() == 0 && !gpt_runtime_context_full());
+    assert(gpt_runtime_select_model(0));
+    assert(gpt_runtime_generate(messages, 1, {}, out, sizeof(out), &stats, nullptr) == 0);
+    assert(std::strcmp(out, "text0") == 0 && remote_generated == 1);
 }
