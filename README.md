@@ -176,6 +176,12 @@ are not visible to it then.
 
 Only the app-folder ZIP is distributed; it contains no model weights.
 
+### Remote models (Claude from your PC)
+
+A folder in `/data/prosperoai/models/` that holds a `remote.json` is a text model whose
+replies come from a chat server on your network. With claude-bridge running on a PC,
+you can chat with Claude from the PS5. See [docs/REMOTE_MODELS.md](docs/REMOTE_MODELS.md).
+
 ### Reporting a problem
 
 **Settings > Diagnostics > Debug log** makes the app write a timed trace of what it does:
